@@ -19,29 +19,37 @@ class Main {
      this.checkRequirements();
    }
 
-    run(callback) {
-      var mainThis = this;
-      serversConfReader.loadFile(this.serverConf, (err, serverConfigs) => {
-          var caCertFile = fs.readFileSync(this.cacertFilename);
+   run(callback) {
+     var mainThis = this;
+     serversConfReader.loadFile(this.serverConf, (err, serverConfigs) => {
+        if (err) {
+          callback(err);
+          return;
+        }
+        serversConfReader.loadCertficateFile(this.cacertFilename, (err, caCertFile) => {
+            if (err) {
+              callback(err);
+              return;
+            }
+            var cbfns = [];
+            for (var srvIdx in serverConfigs) {
+                let srvCfg = serverConfigs[srvIdx];
+                var cbfn = function(cb) {
+                  server.connect(srvCfg, caCertFile, (err, certificate) => {
+                    if (err) {
+                      cb(null, {error: err});
+                      return;
+                    }
+                    sslChecker.checkCertifcate(srvCfg, certificate, mainThis.sslExpiresIn, cb);
+                  });
+                };
+                cbfns.push(cbfn);
+            }
 
-          var cbfns = [];
-          for (var srvIdx in serverConfigs) {
-              let srvCfg = serverConfigs[srvIdx];
-              var cbfn = function(cb) {
-                server.connect(srvCfg, caCertFile, (err, certificate) => {
-                  if (err) {
-                    cb(null, {error: err});
-                    return;
-                  }
-                  sslChecker.checkCertifcate(srvCfg, certificate,cb);
-                });
-              };
-              cbfns.push(cbfn);
-          }
-
-          async.parallelLimit(cbfns, this.numberOfWorkers, function(err, results) {
-            callback(err, results);
-          });
+            async.parallelLimit(cbfns, this.numberOfWorkers, function(err, results) {
+              callback(err, results);
+            });
+        });
       });
     }
 

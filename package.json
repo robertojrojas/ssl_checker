@@ -11,5 +11,8 @@
   "dependencies": {
     "async": "^2.5.0",
     "moment": "^2.19.1"
+  },
+  "devDependencies": {
+    "pem": "^1.12.3"
   }
 }
