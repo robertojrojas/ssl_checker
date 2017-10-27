@@ -1,9 +1,9 @@
 const https             = require('https'),
       fs                = require('fs'),
       async             = require('async'),
-      moment            = require('moment'),
       serversConfReader = require('./lib/serversConfReader'),
-      server            = require('./lib/server')
+      server            = require('./lib/server'),
+      sslChecker        = require('./lib/sslChecker'),
       EXPIRE_IN_DAYS    = 5,
       WORKERS           = 4
       ;
@@ -20,49 +20,29 @@ class Main {
    }
 
     run(callback) {
-        var mainThis = this;
-        serversConfReader.loadFile(this.serverConf, (err, serverConfigs) => {
-        var caCertFile = fs.readFileSync(this.cacertFilename);
-        var cbfns = [];
-        for (var srvIdx in serverConfigs) {
-            let srvCfg = serverConfigs[srvIdx];
-            var cbfn = function(cb) {
-              server.connect(srvCfg, caCertFile, (err, certificate) => {
-                if (err) {
-                  cb(null, {error: err});
-                  return;
-                }
-                if (mainThis.sslCertificateAboutToExpire(certificate, mainThis.sslExpiresIn)) {
-                  cb(null, {
-                      serverConf: srvCfg,
-                      ssl_certificate: {
-                        subject: certificate.subject,
-                        issuer: certificate.issuer,
-                        valid_from: certificate.valid_from,
-                        valid_to: certificate.valid_to,
-                        serialNumber: certificate.serialNumber
-                      }
-                  });
-                } else {
-                  cb(null, null);
-                }
+      var mainThis = this;
+      serversConfReader.loadFile(this.serverConf, (err, serverConfigs) => {
+          var caCertFile = fs.readFileSync(this.cacertFilename);
 
-              });
-            };
-            cbfns.push(cbfn);
-        }
+          var cbfns = [];
+          for (var srvIdx in serverConfigs) {
+              let srvCfg = serverConfigs[srvIdx];
+              var cbfn = function(cb) {
+                server.connect(srvCfg, caCertFile, (err, certificate) => {
+                  if (err) {
+                    cb(null, {error: err});
+                    return;
+                  }
+                  sslChecker.checkCertifcate(srvCfg, certificate,cb);
+                });
+              };
+              cbfns.push(cbfn);
+          }
 
-        async.parallelLimit(cbfns, this.numberOfWorkers, function(err, results) {
-          callback(err, results);
-        });
-
+          async.parallelLimit(cbfns, this.numberOfWorkers, function(err, results) {
+            callback(err, results);
+          });
       });
-    }
-
-    sslCertificateAboutToExpire(sslCertificate, daysInTheFuture) {
-        var certValidUntil = moment(sslCertificate.valid_to, "MMM DD HH:mm:ss YYYY GMT");
-        var expirationDateTarget = moment().add(daysInTheFuture, 'd');
-        return certValidUntil <= expirationDateTarget;
     }
 
     checkRequirements() {
